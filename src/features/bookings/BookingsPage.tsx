@@ -16,6 +16,7 @@ const STATUS_COLORS: Record<string, { bg: string, text: string }> = {
   accepted: { bg: 'bg-[#19A974]/10 border-[#19A974]/20', text: 'text-[#19A974]' },
   ongoing: { bg: 'bg-[var(--route-blue)]/10 border-[var(--route-blue)]/20', text: 'text-[var(--route-blue)]' },
   completed: { bg: 'bg-border-color', text: 'text-muted' },
+  cancelled: { bg: 'bg-[#E25555]/10 border-[#E25555]/20', text: 'text-[#E25555]' },
 };
 
 export function BookingsPage() {
@@ -71,7 +72,7 @@ export function BookingsPage() {
         </div>
 
         <div className="flex bg-border-color rounded-[8px] p-1">
-          {['all', 'waiting', 'accepted', 'ongoing', 'completed'].map(s => (
+          {['all', 'waiting', 'accepted', 'ongoing', 'completed', 'cancelled'].map(s => (
             <button
               key={s}
               onClick={() => setFilterStatus(s)}

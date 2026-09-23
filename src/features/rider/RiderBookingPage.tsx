@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Button } from '@/shared/components/ui/Button';
 import { RouteLine } from '@/shared/components/ui/RouteLine';
-import { MapPin, Navigation, Clock, User, Star, Map as MapIcon, ChevronRight, BusFront } from 'lucide-react';
+import { MapPin, Navigation, Clock, User, Star, Map as MapIcon, ChevronRight, BusFront, AlertTriangle, ArrowRight, XCircle, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/shared/utils/cn';
+import { useNavigate } from 'react-router-dom';
 
 import { LiveMap } from '@/shared/components/ui/LiveMap';
 import type { MapMarkerData } from '@/shared/components/ui/LiveMap';
@@ -10,14 +11,19 @@ import type { MapMarkerData } from '@/shared/components/ui/LiveMap';
 import { useMapStore } from '@/shared/store/mapStore';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { createBooking, fetchDrivers } from '@/shared/api/client';
+import { useTripStore, type Trip } from '@/stores/tripStore';
 
 export function RiderBookingPage() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { addTrip, cancelTrip } = useTripStore();
   const [step, setStep] = useState<'location' | 'shuttles' | 'confirmed'>('location');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [customFrom, setCustomFrom] = useState<{lat: number, lng: number} | null>(null);
   const [customTo, setCustomTo] = useState<{lat: number, lng: number} | null>(null);
+  const [bookedTrip, setBookedTrip] = useState<Trip | null>(null);
+  const [isCancellingRide, setIsCancellingRide] = useState(false);
 
   const STOPS = useMapStore(state => state.stops);
   const ROUTES = useMapStore(state => state.routes);
@@ -47,21 +53,63 @@ export function RiderBookingPage() {
   const toCoords = getCoordinates(to, customTo);
 
   const mutation = useMutation({
-    mutationFn: (routeId: string) => createBooking({
-      id: `B-${Math.floor(Math.random() * 9000) + 1000}`,
-      riderName: 'Guest Rider',
-      riderId: 'rider_guest',
-      fromStopId: from,
-      toStopId: to,
-      routeId,
-      requestedPickupTime: new Date(Date.now() + 5 * 60000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-      status: 'waiting'
-    }),
-    onSuccess: () => {
+    mutationFn: async ({ routeId, driver }: { routeId: string; driver: (typeof onlineDrivers)[0] }) => {
+      const generatedId = `SH-${Math.floor(10000 + Math.random() * 90000)}`;
+      const routeInfo = ROUTES[routeId];
+      const fromName = from === 'custom-from' ? customFromName : (STOPS[from]?.name || from);
+      const toName = to === 'custom-to' ? customToName : (STOPS[to]?.name || to);
+      const pickupTime = new Date(Date.now() + 5 * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      await createBooking({
+        id: generatedId,
+        riderName: 'Guest Rider',
+        riderId: 'rider_guest',
+        fromStopId: from,
+        toStopId: to,
+        routeId,
+        requestedPickupTime: pickupTime,
+        status: 'waiting',
+        driverId: driver.id,
+        vehicleId: driver.vehicleId,
+      });
+
+      const newTrip: Trip = {
+        id: generatedId,
+        date: 'Today',
+        time: pickupTime,
+        status: 'upcoming',
+        from: fromName,
+        to: toName,
+        driver: {
+          name: driver.name,
+          rating: String(driver.rating),
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${driver.name}`
+        },
+        vehicle: driver.vehicleId || 'SH-04 (Tata Starbus)',
+        color: routeInfo?.color || '#3867FF'
+      };
+
+      return newTrip;
+    },
+    onSuccess: (newTrip) => {
+      setBookedTrip(newTrip);
+      addTrip(newTrip);
       queryClient.invalidateQueries({ queryKey: ['bookings'] });
       setStep('confirmed');
     }
   });
+
+  const handleCancelCurrentRide = async () => {
+    if (!bookedTrip) return;
+    setIsCancellingRide(true);
+    try {
+      await cancelTrip(bookedTrip.id);
+      setBookedTrip(prev => prev ? { ...prev, status: 'cancelled' } : null);
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+    } finally {
+      setIsCancellingRide(false);
+    }
+  };
 
   return (
     <div className="flex h-full w-full bg-background text-foreground overflow-hidden">
@@ -172,9 +220,8 @@ export function RiderBookingPage() {
                   return (
                     <div 
                       key={driver.id}
-                      className="bg-background border-2 border-border-color hover:border-[#2457E6] rounded-[16px] p-5 flex flex-col gap-4 cursor-pointer transition-all hover:shadow-md"
+                      className="bg-background border-2 border-border-color rounded-[16px] p-5 flex flex-col gap-4 transition-all hover:border-[#2457E6]/40 hover:shadow-md"
                       style={{ borderColor: 'var(--border-color)' }}
-                      onClick={() => setStep('confirmed')}
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex items-center gap-3">
@@ -203,7 +250,7 @@ export function RiderBookingPage() {
                       <Button 
                         className="w-full mt-2 h-12 text-[15px] font-bold hover:opacity-90 flex items-center justify-center gap-2" 
                         style={{ backgroundColor: route.color }} 
-                        onClick={(e) => { e.stopPropagation(); mutation.mutate(route.id); }}
+                        onClick={() => mutation.mutate({ routeId: route.id, driver })}
                         disabled={mutation.isPending}
                       >
                         {mutation.isPending ? 'Booking...' : 'Book Ride'}
@@ -216,33 +263,77 @@ export function RiderBookingPage() {
           )}
 
           {step === 'confirmed' && (
-            <div className="flex flex-col gap-6 animate-in fade-in zoom-in-95 duration-500 items-center justify-center h-full text-center mt-[-40px]">
-              <div className="w-24 h-24 rounded-full bg-[#19A974]/10 text-[#19A974] flex items-center justify-center mb-2">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              </div>
-              <div>
-                <h2 className="text-3xl font-bold tracking-tight">Ride Confirmed!</h2>
-                <p className="text-muted mt-2 text-[15px]">Your driver is on the way to {STOPS[from]?.name}.</p>
-              </div>
-              
-              <div className="bg-muted/5 border border-border-color rounded-[16px] p-6 w-full flex flex-col gap-4 text-left">
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] font-bold text-muted uppercase tracking-wider">Booking ID</span>
-                  <span className="font-mono font-bold text-[14px]">SH-98321</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] font-bold text-muted uppercase tracking-wider">Vehicle</span>
-                  <span className="font-bold text-[14px]">SH-04 (Tata Starbus)</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] font-bold text-muted uppercase tracking-wider">PIN Code</span>
-                  <span className="font-bold text-[18px] tracking-widest text-[#2457E6]">4092</span>
-                </div>
-              </div>
+            <div className="flex flex-col gap-5 animate-in fade-in zoom-in-95 duration-500 items-center justify-center h-full text-center mt-[-20px]">
+              {bookedTrip?.status === 'cancelled' ? (
+                <>
+                  <div className="w-20 h-20 rounded-full bg-[#E25555]/10 text-[#E25555] flex items-center justify-center mb-1">
+                    <XCircle size={40} />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold tracking-tight text-[#E25555]">Ride Cancelled</h2>
+                    <p className="text-muted mt-1 text-[14px]">Your ride {bookedTrip.id} has been cancelled successfully.</p>
+                  </div>
+                  <Button 
+                    className="w-full h-12 text-[15px] font-bold mt-4 rounded-[10px]" 
+                    onClick={() => { setStep('location'); setFrom(''); setTo(''); setBookedTrip(null); }}
+                  >
+                    Book Another Ride
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="w-20 h-20 rounded-full bg-[#19A974]/10 text-[#19A974] flex items-center justify-center mb-1">
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold tracking-tight">Ride Confirmed!</h2>
+                    <p className="text-muted mt-1 text-[14px]">Your driver is on the way to {bookedTrip?.from || STOPS[from]?.name}.</p>
+                  </div>
+                  
+                  <div className="bg-muted/5 border border-border-color rounded-[16px] p-5 w-full flex flex-col gap-3 text-left">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[12px] font-bold text-muted uppercase tracking-wider">Booking ID</span>
+                      <span className="font-mono font-bold text-[14px] text-foreground">{bookedTrip?.id || 'SH-98321'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[12px] font-bold text-muted uppercase tracking-wider">Vehicle</span>
+                      <span className="font-bold text-[14px] text-foreground">{bookedTrip?.vehicle || 'SH-04 (Tata Starbus)'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[12px] font-bold text-muted uppercase tracking-wider">PIN Code</span>
+                      <span className="font-bold text-[16px] tracking-widest text-[#2457E6]">4092</span>
+                    </div>
+                  </div>
 
-              <Button className="w-full h-14 text-[16px] mt-4 rounded-[10px]" onClick={() => { setStep('location'); setFrom(''); setTo(''); }}>
-                Done
-              </Button>
+                  <div className="flex flex-col w-full gap-2.5 mt-2">
+                    <Button 
+                      className="w-full h-12 text-[15px] font-bold rounded-[10px]" 
+                      onClick={() => { setStep('location'); setFrom(''); setTo(''); setBookedTrip(null); }}
+                    >
+                      Done
+                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => navigate('/rider/trips')}
+                        className="flex-1 h-11 text-[13px] font-bold rounded-[8px]"
+                      >
+                        View in My Trips
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleCancelCurrentRide}
+                        disabled={isCancellingRide}
+                        className="flex-1 h-11 text-[13px] font-bold text-[#E25555] border-[#E25555]/30 hover:bg-[#E25555]/10 hover:border-[#E25555] rounded-[8px]"
+                      >
+                        {isCancellingRide ? 'Cancelling...' : 'Cancel Ride'}
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
