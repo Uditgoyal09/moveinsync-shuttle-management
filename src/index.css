@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-blue: #2457E6;
+  --font-sans: 'Instrument Sans', system-ui, sans-serif;
+  
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-border-color: var(--border);
+  --color-muted: var(--muted);
+  --color-muted-bg: var(--muted-bg);
+}
+
+@layer base {
+  :root {
+    --background: #F4F5F7;
+    --surface: #FFFFFF;
+    --foreground: #101828;
+    --border: #E4E7EC;
+    --muted: #667085;
+    --muted-bg: #EAECEF;
+    --route-blue: #3867FF;
+    --route-orange: #F27A38;
+    --route-green: #19A974;
+    --route-violet: #8067E8;
+    --route-teal: #19A7A8;
+  }
+  
+  .dark {
+    --background: #0B1320;
+    --surface: #131C2D;
+    --foreground: #F8FAFC;
+    --border: #1E293B;
+    --muted: #94A3B8;
+    --muted-bg: #0A101C;
+    --route-blue: #4B70FF;
+    --route-orange: #F9884F;
+    --route-green: #23C98D;
+    --route-violet: #957BF2;
+    --route-teal: #21C5C7;
+  }
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  font-family: var(--font-sans);
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.map-bg {
+  background-color: var(--muted-bg);
+  background-image: 
+    radial-gradient(circle at 50% 50%, rgba(25, 169, 116, 0.05) 0%, transparent 60%),
+    linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+  background-size: 100% 100%, 40px 40px, 40px 40px;
+}
